@@ -13,6 +13,7 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
     "clsx": "^2.1.1",
+    "groq-sdk": "^0.37.0",
     "lucide-react": "^0.562.0",
     "mammoth": "^1.11.0",
     "next": "16.1.1",
