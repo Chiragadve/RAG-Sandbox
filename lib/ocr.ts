@@ -9,6 +9,41 @@ import { pathToFileURL } from 'url';
 // We must use a file:// URL for Windows compatibility with Node's ESM loader
 pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(path.join(process.cwd(), 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs')).toString();
 
+// NodeCanvasFactory to bridge pdf.js and node-canvas
+class NodeCanvasFactory {
+    create(width: number, height: number) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (width <= 0 || height <= 0) {
+            throw new Error("Invalid canvas size");
+        }
+        const canvas = createCanvas(width, height);
+        const context = canvas.getContext("2d");
+        return {
+            canvas,
+            context,
+        };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    reset(canvasAndContext: any, width: number, height: number) {
+        if (!canvasAndContext.canvas) throw new Error("Canvas is not specified");
+        if (width <= 0 || height <= 0) {
+            throw new Error("Invalid canvas size");
+        }
+        canvasAndContext.canvas.width = width;
+        canvasAndContext.canvas.height = height;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    destroy(canvasAndContext: any) {
+        if (!canvasAndContext.canvas) throw new Error("Canvas is not specified");
+        canvasAndContext.canvas.width = 0;
+        canvasAndContext.canvas.height = 0;
+        canvasAndContext.canvas = null;
+        canvasAndContext.context = null;
+    }
+}
+
 export async function performOCR(buffer: Buffer): Promise<string> {
     console.log("Starting OCR processing...");
     let worker = null;
@@ -30,7 +65,8 @@ export async function performOCR(buffer: Buffer): Promise<string> {
         // Load the PDF document
         const loadingTask = pdfjsLib.getDocument({
             data,
-            fontExtraProperties: true // Optional: sometimes helps with fonts
+            canvasFactory: new NodeCanvasFactory(), // REQUIRED for Node.js environment
+            fontExtraProperties: true
         });
         const pdfDocument = await loadingTask.promise;
 
