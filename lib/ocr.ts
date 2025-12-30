@@ -49,11 +49,14 @@ export async function performOCR(buffer: Buffer): Promise<string> {
 
             // Render PDF page into canvas context
             await page.render({
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 canvasContext: context as any,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 viewport: viewport as any
             } as any).promise;
 
             // Get image buffer from canvas
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const imageBuffer = canvas.toBuffer('image/png') as any;
 
             // Perform OCR on the image buffer using the persistent worker

@@ -59,6 +59,7 @@ export async function listTools() {
     return await client.listTools();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function callTool(name: string, args: any) {
     const client = await getMcpClient();
     return await client.callTool({

@@ -3,7 +3,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
-import { PDFParser } from 'pdf2json'
+import PDFParser from 'pdf2json'
 import * as mammoth from 'mammoth'
 import * as Papa from 'papaparse'
 import Groq from "groq-sdk"
@@ -75,7 +75,7 @@ export async function handleOAuthCallback(code: string) {
         }
 
         return { success: true }
-    } catch (error: any) {
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error("OAuth Callback Error:", error)
         return { success: false, error: error.message }
     }
@@ -150,7 +150,7 @@ export async function ingestGmail() {
 
         return { success: true, count }
 
-    } catch (error: any) {
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error("Ingest Gmail Error:", error)
         return { success: false, error: error.message }
     }
@@ -223,7 +223,7 @@ export async function generatePodcast(documentIds: string[]) {
 
         return { success: true, audioUrl: publicUrl, script, title: docNameSummary }
 
-    } catch (error: any) {
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error('Podcast Generation Failed:', error)
         return { success: false, error: error.message }
     }
@@ -280,7 +280,7 @@ async function extractText(file: File, buffer: Buffer): Promise<string> {
 
     if (type === 'application/pdf') {
         const textPromise = new Promise<string>((resolve, reject) => {
-            const pdfParser = new (require('pdf2json'))(null, 1); // 1 = text only
+            const pdfParser = new PDFParser(null, 1); // 1 = text only
 
             pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
 
@@ -448,7 +448,7 @@ export async function processFile(formData: FormData) {
 
         return { success: true, count: chunkRecords.length, documentId: doc.id }
 
-    } catch (error: any) {
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error('Processing failed:', error)
         return { success: false, error: error.message }
     }
@@ -701,7 +701,7 @@ ${plan}
             sources: documents
         }
 
-    } catch (error: any) {
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error('Chat failed:', error)
         return { success: false, error: error.message }
     }
