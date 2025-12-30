@@ -19,7 +19,7 @@ export default function PodcastPlayer({ documentId, documentName }: PodcastPlaye
         setError(null)
 
         try {
-            const result = await generatePodcast(documentId)
+            const result = await generatePodcast([documentId])
 
             if (result.success && result.audioUrl) {
                 setAudioUrl(result.audioUrl)
