@@ -2,13 +2,13 @@
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import PDFParser from 'pdf2json'
 import * as mammoth from 'mammoth'
 import * as Papa from 'papaparse'
 import Groq from "groq-sdk"
 import { listTools, callTool } from '@/lib/mcp'
-import { performOCR } from '@/lib/ocr'
+import { extractPDFText } from '@/lib/pdf-pipeline'
+import { vectorizeIncrementally, ChunkRecord } from '@/lib/vectorize-pipeline'
 import { generatePodcastScript, synthesizePodcastAudio } from '@/lib/podcast'
 import { getAuthUrl, getTokens } from '@/lib/google_auth'
 import { listEmails, getEmailContent } from '@/lib/gmail'
@@ -279,65 +279,24 @@ async function extractText(file: File, buffer: Buffer): Promise<string> {
     const name = file.name
 
     if (type === 'application/pdf') {
-        const textPromise = new Promise<string>((resolve, reject) => {
-            const pdfParser = new PDFParser(null, true); // true = text only
+        // Production PDF Pipeline:
+        // - Guardrails (size, pages, timeout)
+        // - Classification (TEXT_BASED / SCANNED / MIXED / ENCRYPTED / CORRUPTED)
+        // - Page-batched extraction
+        // - Concurrency control (max 2)
+        // - User-facing messages (no stack traces)
 
-            pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+        console.log(`[PDF] Starting: ${file.name} (${(buffer.length / 1024 / 1024).toFixed(2)}MB)`);
 
-            pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
-                try {
-                    // direct extraction
-                    let rawText = pdfParser.getRawTextContent();
+        const result = await extractPDFText(buffer);
 
-                    // Clean pdf2json artifacts
-                    rawText = rawText.replace(/----------------Page \(\d+\) Break----------------/g, "");
-
-                    if (!rawText || rawText.trim().length < 20) throw new Error("Text too short or empty");
-                    resolve(rawText);
-                } catch (e) {
-                    console.warn("Standard PDF extraction insufficient, falling back to manual page loop...");
-                    let text = "";
-                    if (pdfData && pdfData.formImage && pdfData.formImage.Pages) {
-                        pdfData.formImage.Pages.forEach((page: any) => {
-                            page.Texts.forEach((t: any) => {
-                                text += decodeURIComponent(t.R[0].T) + " ";
-                            });
-                            text += "\n";
-                        });
-                    }
-                    resolve(text);
-                }
-            });
-
-            pdfParser.parseBuffer(buffer);
-        });
-
-        try {
-            let text = await textPromise;
-
-            // [Check for OCR Trigger]
-            // If text is still suspiciously short after standard parse OR contains mostly whitespace/symbols, try OCR
-            const cleanText = text.replace(/\s/g, "").replace(/----------------Page\(\d+\)Break----------------/g, "");
-
-            if (!text || text.trim().length < 50 || cleanText.length < 20) {
-                console.log(`Text extraction yielded minimal results (Length: ${text.length}, Clean: ${cleanText.length}). Attempting OCR...`);
-                try {
-                    const ocrText = await performOCR(buffer);
-                    // Use OCR result if it provides significantly more "real" characters
-                    const cleanOcr = ocrText.replace(/\s/g, "");
-                    if (ocrText && cleanOcr.length > cleanText.length + 20) {
-                        text = ocrText;
-                    }
-                } catch (ocrErr) {
-                    console.error("OCR Attempt failed:", ocrErr);
-                    // continue with original text
-                }
-            }
-            return text;
-        } catch (err) {
-            console.error("PDF Parse Error, trying OCR:", err);
-            return await performOCR(buffer);
+        if (!result.success) {
+            // Use user-facing message, never expose internals
+            throw new Error(result.userMessage);
         }
+
+        console.log(`[PDF] Complete: ${result.text.length} chars, ${result.pageCount} pages, ${result.processingTimeMs}ms, source: ${result.source}`);
+        return result.text;
     }
 
     if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || name.endsWith('.docx')) {
@@ -345,7 +304,6 @@ async function extractText(file: File, buffer: Buffer): Promise<string> {
         return result.value
     }
 
-    // ... rest of handlers
     if (type === 'text/csv' || name.endsWith('.csv')) {
         const text = buffer.toString('utf-8')
         const result = Papa.parse(text, { header: true })
@@ -402,63 +360,67 @@ export async function processFile(formData: FormData) {
             throw new Error(`Database Error: ${docError.message}`)
         }
 
-        // 3. Chunk the text
-        const splitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 512,
-            chunkOverlap: 50,
-        })
+        // 3. Incremental Vectorization
+        // - Chunks per page (not globally)
+        // - Embeds immediately after chunking
+        // - Stores incrementally
+        // - Enables crash recovery
 
-        const chunks = await splitter.createDocuments([text])
-        console.log(`Generated ${chunks.length} chunks`)
+        const source = file.type === 'application/pdf' ? 'pdf2json' : 'pdf2json';
 
-        // 4. Generate Embeddings & Store
-        const chunkRecords = []
-
-        // [IMPROVEMENT 2]: Save chunk_index for sequence preservation
-        for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i]
-            const content = chunk.pageContent
-
-            const { data: embedData, error: embedError } = await supabase.functions.invoke('embed', {
+        // Embed function: calls Supabase edge function
+        const embedFn = async (content: string): Promise<number[] | null> => {
+            const { data, error } = await supabase.functions.invoke('embed', {
                 body: { input: content }
-            })
-
-            if (embedError) {
-                console.error('Embedding error:', embedError)
-                continue
+            });
+            if (error || !data?.embedding) {
+                console.error('Embedding error:', error);
+                return null;
             }
+            return data.embedding;
+        };
 
-            if (!embedData || !embedData.embedding) {
-                console.error('No embedding returned')
-                continue
-            }
-
-            chunkRecords.push({
-                document_id: doc.id,
-                content: content,
-                embedding: embedData.embedding,
-                metadata: chunk.metadata,
-                chunk_index: i // Save index
-            })
-        }
-
-        if (chunkRecords.length > 0) {
-            const { error: insertError } = await supabase
+        // Store function: inserts chunk into database
+        const storeFn = async (chunk: ChunkRecord): Promise<boolean> => {
+            const { error } = await supabase
                 .from('chunks')
-                .insert(chunkRecords)
+                .insert({
+                    document_id: chunk.documentId,
+                    content: chunk.content,
+                    embedding: chunk.embedding,
+                    metadata: {
+                        page: chunk.page,
+                        chunkIndex: chunk.chunkIndex,
+                        source: chunk.source
+                    },
+                    chunk_index: chunk.chunkIndex
+                });
 
-            if (insertError) throw insertError
+            if (error) {
+                console.error('Store error:', error);
+                return false;
+            }
+            return true;
+        };
+
+        const result = await vectorizeIncrementally(
+            text,
+            doc.id,
+            source as 'pdf2json' | 'ocr' | 'hybrid',
+            embedFn,
+            storeFn
+        );
+
+        if (!result.success) {
+            throw new Error(result.failureReason || 'Vectorization failed');
         }
 
-        if (chunkRecords.length === 0) {
-            throw new Error('All chunks failed to embed. Check server logs.')
-        }
+        return { success: true, count: result.totalChunks, documentId: doc.id }
 
-        return { success: true, count: chunkRecords.length, documentId: doc.id }
-
-    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-        console.error('Processing failed:', error)
-        return { success: false, error: error.message }
+    } catch (error: unknown) {
+        const err = error as Error;
+        console.error('Processing failed:', err);
+        return { success: false, error: err.message }
     }
 }
 

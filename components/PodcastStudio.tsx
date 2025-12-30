@@ -93,7 +93,7 @@ export default function PodcastStudio({ selectedDocumentIds, allDocuments }: Pod
     return (
         <div className="h-full flex flex-col bg-card/30 border-l border-border">
             {/* Header */}
-            <div className="p-6 border-b border-border">
+            <div className="h-24 px-6 flex flex-col justify-center border-b border-border">
                 <h2 className="text-lg font-bold text-foreground flex items-center gap-2 font-display">
                     <Headphones className="w-5 h-5 text-primary" />
                     Podcast Studio

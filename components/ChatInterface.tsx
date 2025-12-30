@@ -66,7 +66,7 @@ export default function ChatInterface() {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-120px)] bg-card/30 border border-border rounded-2xl overflow-hidden shadow-soft">
+        <div className="flex flex-col h-full bg-card/30 overflow-hidden">
             {/* Messages Area */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6">
                 {messages.map((m, i) => (

@@ -7,6 +7,7 @@ import ChatInterface from '@/components/ChatInterface'
 import { UploadCloud, FileText, Trash2, MessageSquare, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import PodcastStudio from '@/components/PodcastStudio'
+import { Toast, ToastType } from '@/components/ui/Toast'
 
 type FileStatus = 'queued' | 'processing' | 'completed' | 'error'
 
@@ -22,6 +23,7 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [userDocs, setUserDocs] = useState<any[]>([])
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
+  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null)
 
   const toggleSelection = (id: string, multiSelect: boolean = true) => {
     setSelectedDocIds(prev => {
@@ -54,13 +56,21 @@ export default function Home() {
     }
   }
 
-  const handleProcessAll = async () => {
+  const handleProcessAll = () => {
+    // Don't await - process in background
+    processFilesInBackground()
+  }
+
+  // Non-blocking background processor using streaming API
+  const processFilesInBackground = async () => {
+    if (isProcessing) return
     setIsProcessing(true)
 
-    // Process files sequentially
-    for (const item of files) {
-      if (item.status === 'completed') continue
+    // Get copy of files to process
+    const filesToProcess = files.filter(f => f.status === 'queued')
 
+    // Process each file via streaming API (truly non-blocking)
+    for (const item of filesToProcess) {
       // Update to processing
       setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'processing' } : f))
 
@@ -68,29 +78,72 @@ export default function Home() {
         const formData = new FormData()
         formData.append('file', item.file)
 
-        const result = await processFile(formData)
+        // Use streaming API route instead of server action
+        const response = await fetch('/api/process-file', {
+          method: 'POST',
+          body: formData
+        })
 
-        if (result.success) {
-          setFiles(prev => prev.map(f => f.id === item.id ? {
-            ...f,
-            status: 'completed',
-            message: `Success!`
-          } : f))
-
-          await loadUserDocs()
-        } else {
-          setFiles(prev => prev.map(f => f.id === item.id ? {
-            ...f,
-            status: 'error',
-            message: result.error || 'Unknown error'
-          } : f))
+        if (!response.ok) {
+          throw new Error('Upload failed')
         }
-      } catch (err: any) {
-        setFiles(prev => prev.map(f => f.id === item.id ? {
-          ...f,
-          status: 'error',
-          message: err.message
-        } : f))
+
+        // Read SSE stream for status updates
+        const reader = response.body?.getReader()
+        if (reader) {
+          const decoder = new TextDecoder()
+          let done = false
+          let success = false
+          let buffer = ''
+
+          while (!done) {
+            const { value, done: readerDone } = await reader.read()
+            done = readerDone
+            if (value) {
+              const text = decoder.decode(value, { stream: true })
+              buffer += text
+              const lines = buffer.split('\n')
+
+              // Process all complete lines
+              buffer = lines.pop() || '' // Keep the last partial line in buffer
+
+              for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                  try {
+                    const jsonStr = line.trim().slice(6)
+                    const data = JSON.parse(jsonStr)
+
+                    if (data.status === 'complete') {
+                      success = true
+                    } else if (data.status === 'error') {
+                      // Use warn instead of error to avoid Next.js error overlay
+                      console.warn(`Processing failed: ${data.message}`)
+                      setToast({ message: data.message || 'Processing failed', type: 'error' })
+                      setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error', message: data.message } : f))
+                    }
+                  } catch (e) {
+                    console.warn('Failed to parse SSE message:', line)
+                  }
+                }
+              }
+            }
+          }
+
+          if (success) {
+            setFiles(prev => prev.filter(f => f.id !== item.id))
+            loadUserDocs()
+          } else {
+            setFiles(prev => prev.filter(f => f.id !== item.id))
+          }
+        }
+
+      } catch (err: unknown) {
+        const error = err as Error
+        setFiles(prev => prev.filter(f => f.id !== item.id))
+
+        // Log as warning to avoid dev overlay
+        console.warn(`Error processing ${item.file.name}: ${error.message}`)
+        setToast({ message: error.message || 'Upload failed', type: 'error' })
       }
     }
 
@@ -112,7 +165,7 @@ export default function Home() {
       {/* COL 1: LEFT SIDEBAR (Files) */}
       <div className="w-[320px] shrink-0 border-r border-border bg-card/50 flex flex-col z-10">
         {/* Header */}
-        <div className="p-5 border-b border-border">
+        <div className="h-24 px-6 flex flex-col justify-center border-b border-border">
           <h1 className="text-xl font-display font-bold tracking-tight text-foreground">
             Agentic RAG
           </h1>
@@ -198,8 +251,13 @@ export default function Home() {
                     {selectedDocIds.includes(doc.id) && <ChevronRight className="w-3 h-3 text-primary-foreground" />}
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <p className={cn("text-sm font-medium truncate", selectedDocIds.includes(doc.id) ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}>{doc.name}</p>
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p
+                      className={cn("text-sm font-medium truncate", selectedDocIds.includes(doc.id) ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}
+                      title={doc.name}
+                    >
+                      {doc.name}
+                    </p>
                   </div>
 
                   {/* Delete Button */}
@@ -223,7 +281,7 @@ export default function Home() {
       {/* COL 2: MAIN CHAT (Center) */}
       <div className="flex-1 flex flex-col bg-background relative border-r border-border">
         {/* Clean Header */}
-        <div className="flex items-center gap-3 p-6 border-b border-border bg-background/50 backdrop-blur-sm z-10">
+        <div className="h-24 flex items-center gap-3 px-6 border-b border-border bg-background/50 backdrop-blur-sm z-10">
           <div className="p-2 bg-primary/10 rounded-lg">
             <MessageSquare className="w-5 h-5 text-primary" />
           </div>
@@ -244,6 +302,13 @@ export default function Home() {
         <PodcastStudio selectedDocumentIds={selectedDocIds} allDocuments={userDocs} />
       </div>
 
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </main>
   )
 }
