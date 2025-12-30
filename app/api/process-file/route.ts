@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { extractPDFText } from '@/lib/pdf-pipeline';
+import { extractPDFText, DEFAULT_CONFIG } from '@/lib/pdf-pipeline';
 import { vectorizeIncrementally, ChunkRecord } from '@/lib/vectorize-pipeline';
 import PDFParser from 'pdf2json';
 import * as mammoth from 'mammoth';
@@ -71,6 +71,8 @@ export async function POST(request: NextRequest) {
 
         const formData = await request.formData();
         const file = formData.get('file') as File;
+        const ocrEnabled = formData.get('ocrEnabled') === 'true'; // Parse flag
+
         if (!file) {
             return NextResponse.json({ success: false, error: 'No file' }, { status: 400 });
         }
@@ -88,7 +90,26 @@ export async function POST(request: NextRequest) {
 
                 const arrayBuffer = await file.arrayBuffer();
                 const buffer = Buffer.from(arrayBuffer);
-                const text = await extractText(file, buffer);
+
+                // Pass ocrEnabled to pipeline
+                const result = await extractPDFText(buffer, { ...DEFAULT_CONFIG, ocrEnabled });
+
+                // Check for Requires OCR status
+                if (!result.success && result.requiresOCR && result.extractionStatus === 'REQUIRES_OCR') {
+                    await writer.write(encoder.encode(`data: ${JSON.stringify({
+                        status: "requires_ocr",
+                        message: result.userMessage,
+                        ocrEstimate: result.ocrEstimate
+                    })}\n\n`));
+                    await writer.close();
+                    return;
+                }
+
+                if (!result.success) {
+                    throw new Error(result.userMessage);
+                }
+
+                const text = result.text;
 
                 if (!text || text.trim().length === 0) {
                     await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "error", message: "Empty text" })}\n\n`));
@@ -134,26 +155,26 @@ export async function POST(request: NextRequest) {
                             page: chunk.page,
                             chunkIndex: chunk.chunkIndex,
                             source: chunk.source,
-                            documentName: chunk.documentName  // Include for search
+                            documentName: chunk.documentName
                         },
                         chunk_index: chunk.chunkIndex
                     });
                     return !error;
                 };
 
-                // Pass document name for vectorization
-                const result = await vectorizeIncrementally(
+                // Pass document name to vectorizer
+                const vecResult = await vectorizeIncrementally(
                     text,
                     doc.id,
-                    'pdf2json',
+                    result.source, // Use actual source (pdf2json vs ocr)
                     embedFn,
                     storeFn,
-                    undefined,  // Use default config
-                    undefined,  // No progress callback
-                    file.name   // Pass document name
+                    undefined,
+                    undefined,
+                    file.name
                 );
 
-                await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "complete", documentId: doc.id, chunks: result.totalChunks })}\n\n`));
+                await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "complete", documentId: doc.id, chunks: vecResult.totalChunks })}\n\n`));
                 await writer.close();
 
             } catch (e) {

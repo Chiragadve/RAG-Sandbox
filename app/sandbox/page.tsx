@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import PodcastStudio from '@/components/PodcastStudio'
 import { Toast, ToastType } from '@/components/ui/Toast'
 
-type FileStatus = 'queued' | 'processing' | 'completed' | 'error'
+type FileStatus = 'queued' | 'processing' | 'completed' | 'error' | 'requires_ocr'
 
 interface FileItem {
   id: string
@@ -115,6 +115,13 @@ export default function Home() {
 
                     if (data.status === 'complete') {
                       success = true
+                    } else if (data.status === 'requires_ocr') {
+                      setFiles(prev => prev.map(f => f.id === item.id ? {
+                        ...f,
+                        status: 'requires_ocr',
+                        message: data.message
+                      } : f))
+                      // Don't mark as success (keeps item in list), but don't error out
                     } else if (data.status === 'error') {
                       // Use warn instead of error to avoid Next.js error overlay
                       console.warn(`Processing failed: ${data.message}`)
@@ -133,7 +140,10 @@ export default function Home() {
             setFiles(prev => prev.filter(f => f.id !== item.id))
             loadUserDocs()
           } else {
-            setFiles(prev => prev.filter(f => f.id !== item.id))
+            // If requires_ocr, keep it in the list. If error, keep in list.
+            // Only remove if success or if we want to clear errors?
+            // Logic above handles removal on success.
+            // We want to KEEP requires_ocr items.
           }
         }
 
@@ -157,6 +167,64 @@ export default function Home() {
     await deleteDocument(id)
     if (selectedDocIds.includes(id)) setSelectedDocIds(prev => prev.filter(d => d !== id))
     await loadUserDocs()
+  }
+
+  const handleRunOCR = async (fileItem: FileItem) => {
+    // Reset status to queued, but we need to trigger processing with ocrEnabled
+    // Custom processing for this item
+    setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'processing', message: 'Running OCR...' } : f))
+
+    try {
+      const formData = new FormData()
+      formData.append('file', fileItem.file)
+      formData.append('ocrEnabled', 'true') // Enable OCR
+
+      const response = await fetch('/api/process-file', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) throw new Error('OCR Upload failed')
+
+      const reader = response.body?.getReader()
+      if (reader) {
+        const decoder = new TextDecoder()
+        let done = false
+        let success = false
+        let buffer = ''
+
+        while (!done) {
+          const { value, done: readerDone } = await reader.read()
+          done = readerDone
+          if (value) {
+            const text = decoder.decode(value, { stream: true })
+            buffer += text
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              if (line.trim().startsWith('data: ')) {
+                const data = JSON.parse(line.trim().slice(6))
+                if (data.status === 'complete') success = true
+                else if (data.status === 'error') {
+                  setToast({ message: data.message, type: 'error' })
+                  setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: data.message } : f))
+                }
+              }
+            }
+          }
+        }
+
+        if (success) {
+          setFiles(prev => prev.filter(f => f.id !== fileItem.id))
+          loadUserDocs()
+          setToast({ message: 'OCR completed successfully', type: 'success' })
+        }
+      }
+    } catch (e) {
+      console.error(e)
+      setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: 'OCR failed' } : f))
+    }
   }
 
   return (
@@ -216,8 +284,20 @@ export default function Home() {
               {files.map(f => (
                 <div key={f.id} className="text-xs flex justify-between text-muted-foreground">
                   <span className="truncate max-w-[150px]">{f.file.name}</span>
-                  <span className={f.status === 'completed' ? 'text-green-500' : f.status === 'error' ? 'text-destructive' : 'text-primary'}>
-                    {f.status}
+                  <span className={
+                    f.status === 'completed' ? 'text-green-500' :
+                      f.status === 'error' ? 'text-destructive' :
+                        f.status === 'requires_ocr' ? 'text-amber-500' :
+                          'text-primary'
+                  }>
+                    {f.status === 'requires_ocr' ? (
+                      <button
+                        onClick={() => handleRunOCR(f)}
+                        className="text-[10px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded border border-amber-500/30 transition-colors font-bold"
+                      >
+                        Run OCR
+                      </button>
+                    ) : f.status}
                   </span>
                 </div>
               ))}
@@ -292,7 +372,7 @@ export default function Home() {
         </div>
 
         {/* Chat Area */}
-        <div className="flex-1 h-full">
+        <div className="flex-1 h-full min-h-0">
           <ChatInterface />
         </div>
       </div>
