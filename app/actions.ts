@@ -280,7 +280,7 @@ async function extractText(file: File, buffer: Buffer): Promise<string> {
 
     if (type === 'application/pdf') {
         const textPromise = new Promise<string>((resolve, reject) => {
-            const pdfParser = new PDFParser(null, 1); // 1 = text only
+            const pdfParser = new PDFParser(null, true); // true = text only
 
             pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
 
