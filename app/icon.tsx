@@ -19,9 +19,9 @@ export default function Icon() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: 'rgba(124, 58, 237, 0.1)', // Primary (violet-600) at 10% opacity
+                    background: 'rgba(249, 115, 22, 0.1)', // Orange-500 at 10% opacity
                     borderRadius: '6px',
-                    color: '#7c3aed', // Primary violet-600
+                    color: '#f97316', // Orange-500
                 }}
             >
                 <svg
