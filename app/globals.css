@@ -1,26 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=DM+Sans:wght@400;500;600;700&display=swap');
+
 @import "tailwindcss";
+@config "../tailwind.config.ts";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 40 30% 96%;
+    --foreground: 30 15% 12%;
+
+    --card: 40 25% 98%;
+    --card-foreground: 30 15% 12%;
+
+    --popover: 40 25% 98%;
+    --popover-foreground: 30 15% 12%;
+
+    --primary: 24 85% 52%;
+    --primary-foreground: 40 30% 98%;
+
+    --secondary: 155 25% 42%;
+    --secondary-foreground: 40 30% 98%;
+
+    --muted: 35 20% 90%;
+    --muted-foreground: 30 10% 45%;
+
+    --accent: 15 75% 48%;
+    --accent-foreground: 40 30% 98%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 40 30% 98%;
+
+    --border: 35 15% 85%;
+    --input: 35 15% 85%;
+    --ring: 24 85% 52%;
+
+    --radius: 0.5rem;
+
+    /* Custom design tokens */
+    --shadow-soft: 0 4px 40px -12px hsl(30 30% 20% / 0.15);
+    --shadow-card: 0 8px 60px -20px hsl(30 30% 20% / 0.12);
+    --shadow-elevated: 0 20px 80px -30px hsl(30 30% 20% / 0.2);
+    --gradient-warm: linear-gradient(135deg, hsl(24 85% 52%), hsl(15 75% 48%));
+    --gradient-subtle: linear-gradient(180deg, hsl(40 30% 96%), hsl(35 25% 92%));
+  }
+
+  .dark {
+    --background: 30 15% 8%;
+    --foreground: 40 20% 94%;
+    --card: 30 12% 12%;
+    --card-foreground: 40 20% 94%;
+    --muted: 30 10% 18%;
+    --muted-foreground: 35 15% 60%;
+    --border: 30 10% 20%;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Fraunces', Georgia, serif;
+  }
+
+  .text-gradient-warm {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-warm);
+  }
+
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
 }

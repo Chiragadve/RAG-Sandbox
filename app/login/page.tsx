@@ -3,6 +3,7 @@
 import { login, signup } from '../auth/actions'
 import { useState } from 'react'
 import { RocketIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export default function LoginPage() {
     const [isSignUp, setIsSignUp] = useState(false)
@@ -20,26 +21,25 @@ export default function LoginPage() {
             setError(result.error)
             setLoading(false)
         }
-        // If success, the action redirects, so no need to setLoading(false)
     }
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-950 p-4 font-sans text-gray-100">
-            <div className="w-full max-w-md space-y-8 rounded-xl bg-gray-900 p-8 shadow-2xl border border-gray-800">
+        <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans text-foreground">
+            <div className="w-full max-w-md space-y-8 rounded-3xl bg-card p-8 shadow-elevated border border-border">
                 <div className="text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-900/30">
-                        <RocketIcon className="h-6 w-6 text-blue-400" />
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+                        <RocketIcon className="h-6 w-6 text-primary" />
                     </div>
-                    <h2 className="mt-4 text-3xl font-bold tracking-tight text-white">
+                    <h2 className="mt-4 text-3xl font-display font-bold tracking-tight text-foreground">
                         {isSignUp ? 'Create an account' : 'Welcome back'}
                     </h2>
-                    <p className="mt-2 text-sm text-gray-400">
+                    <p className="mt-2 text-sm text-muted-foreground">
                         Sign in to access your Agentic RAG Platform
                     </p>
                 </div>
 
                 <form action={handleSubmit} className="mt-8 space-y-6">
-                    <div className="-space-y-px rounded-md shadow-sm">
+                    <div className="space-y-4">
                         <div>
                             <input
                                 id="email-address"
@@ -47,7 +47,7 @@ export default function LoginPage() {
                                 type="email"
                                 autoComplete="email"
                                 required
-                                className="relative block w-full rounded-t-md border-0 bg-gray-800/50 py-3 px-3 text-gray-100 ring-1 ring-inset ring-gray-700 placeholder:text-gray-500 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6"
+                                className="relative block w-full rounded-xl border border-input bg-background/50 py-3 px-4 text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                 placeholder="Email address"
                             />
                         </div>
@@ -58,24 +58,25 @@ export default function LoginPage() {
                                 type="password"
                                 autoComplete="current-password"
                                 required
-                                className="relative block w-full rounded-b-md border-0 bg-gray-800/50 py-3 px-3 text-gray-100 ring-1 ring-inset ring-gray-700 placeholder:text-gray-500 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6"
+                                className="relative block w-full rounded-xl border border-input bg-background/50 py-3 px-4 text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                                 placeholder="Password"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <button
+                        <Button
                             type="submit"
                             disabled={loading}
-                            className="group relative flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="cursor-pointer w-full"
+                            size="lg"
                         >
                             {loading ? 'Processing...' : (isSignUp ? 'Sign up' : 'Sign in')}
-                        </button>
+                        </Button>
                     </div>
 
                     {error && (
-                        <div className="text-red-400 text-sm text-center bg-red-900/20 p-2 rounded">
+                        <div className="text-destructive text-sm text-center bg-destructive/10 p-3 rounded-xl border border-destructive/20">
                             {error}
                         </div>
                     )}
@@ -87,7 +88,7 @@ export default function LoginPage() {
                             setIsSignUp(!isSignUp)
                             setError(null)
                         }}
-                        className="text-sm text-blue-400 hover:text-blue-300"
+                        className="cursor-pointer text-sm text-primary hover:text-primary/80 transition-colors font-medium"
                     >
                         {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                     </button>

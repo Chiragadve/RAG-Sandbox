@@ -56,8 +56,8 @@ export async function middleware(request: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser()
 
-    // Protect the home page - redirect to /login if not authenticated
-    if (!user && request.nextUrl.pathname === '/') {
+    // Protect the sandbox - redirect to /login if not authenticated
+    if (!user && request.nextUrl.pathname.startsWith('/sandbox')) {
         return NextResponse.redirect(new URL('/login', request.url))
     }
 
