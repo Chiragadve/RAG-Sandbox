@@ -1,19 +1,14 @@
 import { createWorker } from 'tesseract.js';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { createCanvas, Image } from 'canvas';
+import { createCanvas, Image, ImageData } from 'canvas';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
-// Polyfill Image and Canvas so pdf.js can render
+// 1. Force Polyfills immediately (before any PDF.js code loads)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-(global as any).Image = Image;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(global as any).Canvas = createCanvas; // Some pdf.js hacks check for global.Canvas
-
-// Set up pdfjs-dist worker for Node.js environment
-// We point directly to the file in node_modules to avoid Webpack bundling issues in Next.js server
-// We must use a file:// URL for Windows compatibility with Node's ESM loader
-pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(path.join(process.cwd(), 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs')).toString();
+const globalAny = global as any;
+globalAny.Image = Image;
+globalAny.Canvas = createCanvas;
+globalAny.ImageData = ImageData;
 
 // NodeCanvasFactory to bridge pdf.js and node-canvas
 class NodeCanvasFactory {
@@ -52,61 +47,53 @@ class NodeCanvasFactory {
 
 export async function performOCR(buffer: Buffer): Promise<string> {
     console.log("Starting OCR processing...");
+
+    // 2. Dynamic Import to ensure globals are seen by PDF.js
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+    // Set up worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(path.join(process.cwd(), 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs')).toString();
+
     let worker = null;
     try {
         // Explicitly point to the Node.js specific worker script
-        // The default discovery often fails in bundled environments (Next.js server)
-        // And dist/worker.min.js is for browsers (causes addEventListener error)
         const workerPath = path.join(process.cwd(), 'node_modules/tesseract.js/src/worker-script/node/index.js');
 
-        // Initialize worker with English language and default OEM (1)
-        // Pass workerPath to ensure it can be found
+        // Initialize worker
         worker = await createWorker('eng', 1, {
             workerPath: workerPath
         });
 
-        // Convert Buffer to Uint8Array/ArrayBuffer for pdfjs-dist
+        // Convert Buffer
         const data = new Uint8Array(buffer);
 
-        // Load the PDF document
+        // Load PDF
         const loadingTask = pdfjsLib.getDocument({
             data,
-            canvasFactory: new NodeCanvasFactory(), // REQUIRED for Node.js environment
+            canvasFactory: new NodeCanvasFactory(),
             fontExtraProperties: true
         } as any);
         const pdfDocument = await loadingTask.promise;
 
         let fullText = "";
 
-        // Process each page
         for (let i = 1; i <= pdfDocument.numPages; i++) {
             const page = await pdfDocument.getPage(i);
-
-            // Set scale higher for better OCR accuracy
             const viewport = page.getViewport({ scale: 2.0 });
 
-            // Create canvas for rendering
             const canvas = createCanvas(viewport.width, viewport.height);
             const context = canvas.getContext('2d');
 
-            // Render PDF page into canvas context
             await page.render({
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 canvasContext: context as any,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 viewport: viewport as any
-            } as any).promise;
+            }).promise;
 
-            // Get image buffer from canvas
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const imageBuffer = canvas.toBuffer('image/png') as any;
-
-            // Perform OCR on the image buffer using the persistent worker
             const { data: { text } } = await worker.recognize(imageBuffer);
             fullText += text + "\n";
             console.log(`OCR Page ${i}/${pdfDocument.numPages} complete.`);
 
-            // Cleanup page resources
             page.cleanup();
         }
 
