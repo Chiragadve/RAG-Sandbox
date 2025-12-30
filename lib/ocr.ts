@@ -1,8 +1,14 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { createCanvas } from 'canvas';
+import { createCanvas, Image } from 'canvas';
 import path from 'path';
 import { pathToFileURL } from 'url';
+
+// Polyfill Image and Canvas so pdf.js can render
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(global as any).Image = Image;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(global as any).Canvas = createCanvas; // Some pdf.js hacks check for global.Canvas
 
 // Set up pdfjs-dist worker for Node.js environment
 // We point directly to the file in node_modules to avoid Webpack bundling issues in Next.js server
@@ -67,7 +73,7 @@ export async function performOCR(buffer: Buffer): Promise<string> {
             data,
             canvasFactory: new NodeCanvasFactory(), // REQUIRED for Node.js environment
             fontExtraProperties: true
-        });
+        } as any);
         const pdfDocument = await loadingTask.promise;
 
         let fullText = "";
