@@ -287,8 +287,12 @@ async function extractText(file: File, buffer: Buffer): Promise<string> {
             pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
                 try {
                     // direct extraction
-                    const rawText = pdfParser.getRawTextContent();
-                    if (!rawText || rawText.length < 20) throw new Error("Text too short or empty");
+                    let rawText = pdfParser.getRawTextContent();
+
+                    // Clean pdf2json artifacts
+                    rawText = rawText.replace(/----------------Page \(\d+\) Break----------------/g, "");
+
+                    if (!rawText || rawText.trim().length < 20) throw new Error("Text too short or empty");
                     resolve(rawText);
                 } catch (e) {
                     console.warn("Standard PDF extraction insufficient, falling back to manual page loop...");
@@ -312,12 +316,16 @@ async function extractText(file: File, buffer: Buffer): Promise<string> {
             let text = await textPromise;
 
             // [Check for OCR Trigger]
-            // If text is still suspiciously short after standard parse, try OCR
-            if (!text || text.trim().length < 50) {
-                console.log("Text extraction yielded minimal results. Attempting OCR...");
+            // If text is still suspiciously short after standard parse OR contains mostly whitespace/symbols, try OCR
+            const cleanText = text.replace(/\s/g, "").replace(/----------------Page\(\d+\)Break----------------/g, "");
+
+            if (!text || text.trim().length < 50 || cleanText.length < 20) {
+                console.log(`Text extraction yielded minimal results (Length: ${text.length}, Clean: ${cleanText.length}). Attempting OCR...`);
                 try {
                     const ocrText = await performOCR(buffer);
-                    if (ocrText && ocrText.trim().length > text.trim().length) {
+                    // Use OCR result if it provides significantly more "real" characters
+                    const cleanOcr = ocrText.replace(/\s/g, "");
+                    if (ocrText && cleanOcr.length > cleanText.length + 20) {
                         text = ocrText;
                     }
                 } catch (ocrErr) {
