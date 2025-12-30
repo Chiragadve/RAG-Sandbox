@@ -8,9 +8,22 @@ export async function middleware(request: NextRequest) {
         },
     })
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseKey) {
+        console.warn('Middleware: Missing Supabase Environment Variables')
+        // If config is missing, we can't verify auth. 
+        // For protected routes, we should redirect to login to avoid exposing protected content.
+        if (request.nextUrl.pathname.startsWith('/sandbox')) {
+            return NextResponse.redirect(new URL('/login?error=ServerConfigError', request.url))
+        }
+        return response
+    }
+
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        supabaseUrl,
+        supabaseKey,
         {
             cookies: {
                 get(name: string) {
