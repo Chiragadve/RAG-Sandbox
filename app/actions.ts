@@ -9,7 +9,7 @@ import Groq from "groq-sdk"
 import { listTools, callTool } from '@/lib/mcp'
 import { extractPDFText } from '@/lib/pdf-pipeline'
 import { vectorizeIncrementally, ChunkRecord } from '@/lib/vectorize-pipeline'
-import { generatePodcastScript, synthesizePodcastAudio } from '@/lib/podcast'
+import { generatePodcastScript, synthesizePodcastAudio, generateStoryScript, synthesizeStoryAudio } from '@/lib/podcast'
 import { getAuthUrl, getTokens } from '@/lib/google_auth'
 import { listEmails, getEmailContent } from '@/lib/gmail'
 import { redirect } from 'next/navigation'
@@ -225,6 +225,81 @@ export async function generatePodcast(documentIds: string[]) {
 
     } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
         console.error('Podcast Generation Failed:', error)
+        return { success: false, error: error.message }
+    }
+}
+
+// ============================================================
+// STORY MODE - First-Person Narration
+// ============================================================
+
+export async function generateStory(documentIds: string[]) {
+    try {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Unauthorized')
+
+        if (!documentIds || documentIds.length === 0) {
+            throw new Error("No documents selected")
+        }
+
+        // 1. Fetch document chunks to reconstruct text for ALL docs
+        const { data: chunks, error: chunkError } = await supabase
+            .from('chunks')
+            .select('content, chunk_index, document_id')
+            .in('document_id', documentIds)
+            .order('chunk_index', { ascending: true })
+
+        if (chunkError || !chunks || chunks.length === 0) {
+            throw new Error('Failed to retrieve content for selected documents')
+        }
+
+        // 1b. Fetch doc names for filename
+        const { data: docs } = await supabase.from('documents').select('name').in('id', documentIds)
+        const docNameSummary = docs ? docs.map(d => d.name).join('+').slice(0, 50) : 'interview_story'
+
+        const fullText = chunks.map(c => c.content).join('\n\n')
+
+        // 2. Generate Story Script (First-Person Narration)
+        console.log(`Generating story script for ${documentIds.length} docs (Length: ${fullText.length})`)
+        const script = await generateStoryScript(fullText)
+
+        // 3. Synthesize Audio with Narrator Voice
+        console.log(`Synthesizing story audio for ${script.length} segments`)
+        const audioBuffer = await synthesizeStoryAudio(script)
+
+        // 4. Upload to Storage
+        const fileName = `story_${docNameSummary.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.wav`
+
+        // Try 'podcasts' bucket first, fallback to 'documents'
+        let bucket = 'podcasts'
+        let publicUrl = ''
+
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(fileName, audioBuffer, {
+            contentType: 'audio/wav',
+            upsert: true
+        })
+
+        if (uploadError) {
+            console.warn("Upload to 'podcasts' failed, trying 'documents/podcasts'...", uploadError)
+            bucket = 'documents' // Fallback
+            const { error: retryError } = await supabase.storage.from(bucket).upload(`podcasts/${fileName}`, audioBuffer, {
+                contentType: 'audio/wav',
+                upsert: true
+            })
+            if (retryError) throw new Error(`Upload failed: ${retryError.message}`)
+
+            const res = supabase.storage.from(bucket).getPublicUrl(`podcasts/${fileName}`)
+            publicUrl = res.data.publicUrl
+        } else {
+            const res = supabase.storage.from(bucket).getPublicUrl(fileName)
+            publicUrl = res.data.publicUrl
+        }
+
+        return { success: true, audioUrl: publicUrl, script, title: docNameSummary, mode: 'story' }
+
+    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+        console.error('Story Generation Failed:', error)
         return { success: false, error: error.message }
     }
 }

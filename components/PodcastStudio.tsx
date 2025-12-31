@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { generatePodcast } from '@/app/actions'
-import { Headphones, Loader2, Play, Pause, Download, AlertCircle, Sparkles, Layers, Clock } from 'lucide-react'
+import { generatePodcast, generateStory } from '@/app/actions'
+import { Headphones, Loader2, Play, Pause, Download, AlertCircle, Sparkles, Layers, Clock, MessageSquare, BookOpen } from 'lucide-react'
 
 interface Document {
     id: string
@@ -19,12 +19,14 @@ interface PodcastItem {
     title: string
     audioUrl: string
     createdAt: number
+    mode: 'discussion' | 'story'
 }
 
 export default function PodcastStudio({ selectedDocumentIds, allDocuments }: PodcastStudioProps) {
     const [status, setStatus] = useState<'idle' | 'generating' | 'error'>('idle')
     const [error, setError] = useState<string | null>(null)
     const [podcasts, setPodcasts] = useState<PodcastItem[]>([])
+    const [mode, setMode] = useState<'discussion' | 'story'>('discussion')
 
     // Audio Player State
     const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null)
@@ -39,15 +41,19 @@ export default function PodcastStudio({ selectedDocumentIds, allDocuments }: Pod
         setError(null)
 
         try {
-            const result = await generatePodcast(selectedDocumentIds)
+            // Call appropriate function based on mode
+            const result = mode === 'story'
+                ? await generateStory(selectedDocumentIds)
+                : await generatePodcast(selectedDocumentIds)
 
             if (result.success && result.audioUrl) {
                 // Add to stack
                 const newPodcast: PodcastItem = {
                     id: Math.random().toString(36).substring(7),
-                    title: result.title || "Combined Podcast",
+                    title: result.title || (mode === 'story' ? "Interview Story" : "Combined Podcast"),
                     audioUrl: result.audioUrl,
-                    createdAt: Date.now()
+                    createdAt: Date.now(),
+                    mode: mode
                 }
                 setPodcasts(prev => [newPodcast, ...prev])
                 setStatus('idle')
@@ -114,7 +120,12 @@ export default function PodcastStudio({ selectedDocumentIds, allDocuments }: Pod
                         <div key={pod.id} className={`p-4 rounded-xl border transition-all ${currentPlayingId === pod.id ? 'bg-primary/10 border-primary/50' : 'bg-card border-border hover:border-primary/30'}`}>
                             <div className="flex justify-between items-start mb-3">
                                 <div className="min-w-0">
-                                    <h3 className="text-sm font-semibold text-foreground truncate pr-2" title={pod.title}>{pod.title}</h3>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-semibold text-foreground truncate pr-2" title={pod.title}>{pod.title}</h3>
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${pod.mode === 'story' ? 'bg-accent/20 text-accent' : 'bg-primary/20 text-primary'}`}>
+                                            {pod.mode === 'story' ? '📖 Story' : '🎙️ Discussion'}
+                                        </span>
+                                    </div>
                                     <span className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
                                         <Clock className="w-3 h-3" />
                                         {new Date(pod.createdAt).toLocaleTimeString()}
@@ -164,6 +175,32 @@ export default function PodcastStudio({ selectedDocumentIds, allDocuments }: Pod
                         <span className="truncate">{error}</span>
                     </div>
                 )}
+
+                {/* Mode Toggle */}
+                <div className="mb-4 flex gap-2">
+                    <button
+                        onClick={() => setMode('discussion')}
+                        disabled={status === 'generating'}
+                        className={`cursor-pointer flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-2 ${mode === 'discussion'
+                                ? 'bg-primary/10 border-primary text-primary'
+                                : 'bg-background border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+                            } disabled:opacity-50`}
+                    >
+                        <MessageSquare className="w-4 h-4" />
+                        Discussion
+                    </button>
+                    <button
+                        onClick={() => setMode('story')}
+                        disabled={status === 'generating'}
+                        className={`cursor-pointer flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-2 ${mode === 'story'
+                                ? 'bg-accent/10 border-accent text-accent'
+                                : 'bg-background border-border text-muted-foreground hover:text-foreground hover:border-accent/30'
+                            } disabled:opacity-50`}
+                    >
+                        <BookOpen className="w-4 h-4" />
+                        Story Mode
+                    </button>
+                </div>
 
                 <button
                     onClick={handleGenerate}

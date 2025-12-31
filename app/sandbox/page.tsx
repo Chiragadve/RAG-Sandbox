@@ -222,8 +222,10 @@ export default function Home() {
         }
       }
     } catch (e) {
-      console.error(e)
-      setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: 'OCR failed' } : f))
+      const err = e as Error
+      console.warn(err)
+      setToast({ message: err.message || 'OCR failed', type: 'error' })
+      setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: err.message || 'OCR failed' } : f))
     }
   }
 

@@ -13,4 +13,6 @@ export const cartesia = new CartesiaClient({
 export const VOICES = {
     HOST_1: "1110be38-d524-457d-a7be-87be446a4b0d", // Voice: David
     HOST_2: "17ab4eb9-ef77-4a31-85c5-0603e9fce546", // Voice: Matt
+    NARRATOR: "00a77add-48d5-4ef6-8157-71e5437b282d", // Voice: Olivia - Playful, expressive storytelling
 };
+
