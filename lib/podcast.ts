@@ -48,11 +48,15 @@ export async function generatePodcastScript(text: string): Promise<ScriptItem[]>
 export async function synthesizePodcastAudio(script: ScriptItem[]): Promise<Buffer> {
     const audioSegments: Buffer[] = [];
 
-    for (const item of script) {
+    console.log(`[Podcast] Starting synthesis for ${script.length} segments`);
+
+    for (let i = 0; i < script.length; i++) {
+        const item = script[i];
         const voiceId = item.speaker === 'Host 1' ? VOICES.HOST_1 : VOICES.HOST_2;
 
         try {
-            // Corrected property name: modelId
+            console.log(`[Podcast] Synthesizing segment ${i + 1}/${script.length}: "${item.text.substring(0, 30)}..."`);
+
             const response = await cartesia.tts.bytes({
                 modelId: "sonic-english",
                 voice: {
@@ -60,7 +64,6 @@ export async function synthesizePodcastAudio(script: ScriptItem[]): Promise<Buff
                     id: voiceId,
                 },
                 transcript: item.text,
-                // container: "wav", // Removed as type definition invalid, will assume default or raw
                 outputFormat: {
                     container: "wav",
                     sampleRate: 44100,
@@ -68,58 +71,84 @@ export async function synthesizePodcastAudio(script: ScriptItem[]): Promise<Buff
                 }
             });
 
-            // Handle response buffer conversion
-            // If response is an ArrayBuffer (typical for .bytes()), Buffer.from works.
-            // If it's a Readable stream, we need to read it.
-            // The error said "Readable is not assignable", so it might be a stream in Node environment.
-
+            // Handle all possible response types from Cartesia SDK
+            // In serverless/production, it often returns Uint8Array instead of Buffer
             let chunkBuffer: Buffer;
+
             if (Buffer.isBuffer(response)) {
+                console.log(`[Podcast] Segment ${i + 1}: Got Buffer (${response.length} bytes)`);
                 chunkBuffer = response;
-            } else if (response instanceof ArrayBuffer) {
+            } else if (response instanceof Uint8Array) {
+                // CRITICAL: Serverless environments return Uint8Array, not Buffer
+                console.log(`[Podcast] Segment ${i + 1}: Got Uint8Array (${response.length} bytes)`);
                 chunkBuffer = Buffer.from(response);
-            } else {
-                // Assume it's a Node stream or similar
-                // @ts-ignore - Handle stream generically
+            } else if (response instanceof ArrayBuffer) {
+                console.log(`[Podcast] Segment ${i + 1}: Got ArrayBuffer (${response.byteLength} bytes)`);
+                chunkBuffer = Buffer.from(response);
+            } else if (typeof response === 'object' && response !== null && Symbol.asyncIterator in response) {
+                // Handle async iterable (stream)
+                console.log(`[Podcast] Segment ${i + 1}: Got async stream, collecting...`);
                 const chunks: Buffer[] = [];
-                for await (const chunk of response) {
-                    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+                for await (const chunk of response as AsyncIterable<Uint8Array>) {
+                    if (chunk instanceof Uint8Array) {
+                        chunks.push(Buffer.from(chunk));
+                    } else if (Buffer.isBuffer(chunk)) {
+                        chunks.push(chunk);
+                    } else if (typeof chunk === 'string') {
+                        chunks.push(Buffer.from(chunk));
+                    }
                 }
                 chunkBuffer = Buffer.concat(chunks);
+                console.log(`[Podcast] Segment ${i + 1}: Stream collected (${chunkBuffer.length} bytes)`);
+            } else {
+                // Last resort: try to convert whatever we got
+                console.warn(`[Podcast] Segment ${i + 1}: Unknown response type: ${typeof response}, attempting conversion`);
+                try {
+                    // @ts-ignore - Attempt generic conversion
+                    chunkBuffer = Buffer.from(response);
+                } catch (convError) {
+                    console.error(`[Podcast] Segment ${i + 1}: Failed to convert response`, convError);
+                    continue; // Skip this segment
+                }
+            }
+
+            // Validate we got actual audio data
+            if (chunkBuffer.length < 44) {
+                console.warn(`[Podcast] Segment ${i + 1}: Buffer too small (${chunkBuffer.length} bytes), skipping`);
+                continue;
             }
 
             audioSegments.push(chunkBuffer);
+            console.log(`[Podcast] Segment ${i + 1}: Successfully added (${chunkBuffer.length} bytes)`);
+
         } catch (e) {
-            console.error(`Audio synthesis failed for segment: "${item.text.substring(0, 20)}..."`, e);
+            console.error(`[Podcast] Segment ${i + 1} synthesis failed:`, e);
+            // Don't rethrow - continue with other segments
         }
     }
 
     // Concatenate all WAV buffers
-    // Note: Simple concatenation of WAV files works if headers are stripped from subsequent files
-    // or if we use raw PCM and add header at the end.
-    // For simplicity in this implementation, we assume we can get a buffer.
-    // Since the SDK is new, we use the standard WebSocket play method pattern adapted for server-side buffer collection
-    // or the REST API if available. The official Node SDK uses WebSocket.
+    // Strip 44-byte WAV header from all segments except the first
 
-    // Let's use the buffer functionality if exposed, otherwise we might need a workaround.
-    // Checking docs (simulated): SDK usually has tts.websocket() or similar.
+    if (audioSegments.length === 0) {
+        console.error('[Podcast] No audio segments were successfully synthesized!');
+        return Buffer.from([]);
+    }
 
-    // ACTUALLY: For server-side file generation, using the buffer/bytes return is best.
-    // If the usage is purely real-time, we stream. But here we want to save to Supabase.
+    console.log(`[Podcast] Concatenating ${audioSegments.length} segments...`);
 
-    // Implementation: using bytes() method if available or accumulating frames.
+    // Validate first segment has proper WAV header
+    if (audioSegments[0].length < 44) {
+        console.error(`[Podcast] First segment too small for WAV header: ${audioSegments[0].length} bytes`);
+        return Buffer.from([]);
+    }
 
-    // For simplicity: We will concatenate them. This is NOT perfect for WAV (headers in middle)
-    // but many players handle it. Better approach: Strip 44-byte header from segments 2..N
-
-    if (audioSegments.length === 0) return Buffer.from([]);
-
-    // Fix: Ideally use a library like wav-merger or strip headers.
-    // Quick fix: Strip 44 byte header from all but first.
     const finalBuffer = Buffer.concat([
         audioSegments[0],
         ...audioSegments.slice(1).map(b => b.subarray(44))
     ]);
+
+    console.log(`[Podcast] Final audio size: ${finalBuffer.length} bytes`);
 
     return finalBuffer;
 }
@@ -179,8 +208,14 @@ Do not include any other text or markdown formatting outside the JSON array.`;
 export async function synthesizeStoryAudio(script: StoryScriptItem[]): Promise<Buffer> {
     const audioSegments: Buffer[] = [];
 
-    for (const item of script) {
+    console.log(`[Story] Starting synthesis for ${script.length} segments`);
+
+    for (let i = 0; i < script.length; i++) {
+        const item = script[i];
+
         try {
+            console.log(`[Story] Synthesizing segment ${i + 1}/${script.length}: "${item.text.substring(0, 30)}..."`);
+
             const response = await cartesia.tts.bytes({
                 modelId: "sonic-english",
                 voice: {
@@ -195,36 +230,76 @@ export async function synthesizeStoryAudio(script: StoryScriptItem[]): Promise<B
                 }
             });
 
+            // Handle all possible response types from Cartesia SDK
+            // In serverless/production, it often returns Uint8Array instead of Buffer
             let chunkBuffer: Buffer;
+
             if (Buffer.isBuffer(response)) {
+                console.log(`[Story] Segment ${i + 1}: Got Buffer (${response.length} bytes)`);
                 chunkBuffer = response;
-            } else if (response instanceof ArrayBuffer) {
+            } else if (response instanceof Uint8Array) {
+                // CRITICAL: Serverless environments return Uint8Array, not Buffer
+                console.log(`[Story] Segment ${i + 1}: Got Uint8Array (${response.length} bytes)`);
                 chunkBuffer = Buffer.from(response);
-            } else {
-                // @ts-ignore - Handle stream generically
+            } else if (response instanceof ArrayBuffer) {
+                console.log(`[Story] Segment ${i + 1}: Got ArrayBuffer (${response.byteLength} bytes)`);
+                chunkBuffer = Buffer.from(response);
+            } else if (typeof response === 'object' && response !== null && Symbol.asyncIterator in response) {
+                // Handle async iterable (stream)
+                console.log(`[Story] Segment ${i + 1}: Got async stream, collecting...`);
                 const chunks: Buffer[] = [];
-                for await (const chunk of response) {
-                    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+                for await (const chunk of response as AsyncIterable<Uint8Array>) {
+                    if (chunk instanceof Uint8Array) {
+                        chunks.push(Buffer.from(chunk));
+                    } else if (Buffer.isBuffer(chunk)) {
+                        chunks.push(chunk);
+                    } else if (typeof chunk === 'string') {
+                        chunks.push(Buffer.from(chunk));
+                    }
                 }
                 chunkBuffer = Buffer.concat(chunks);
+                console.log(`[Story] Segment ${i + 1}: Stream collected (${chunkBuffer.length} bytes)`);
+            } else {
+                // Last resort: try to convert whatever we got
+                console.warn(`[Story] Segment ${i + 1}: Unknown response type: ${typeof response}, attempting conversion`);
+                try {
+                    // @ts-ignore - Attempt generic conversion
+                    chunkBuffer = Buffer.from(response);
+                } catch (convError) {
+                    console.error(`[Story] Segment ${i + 1}: Failed to convert response`, convError);
+                    continue; // Skip this segment
+                }
+            }
+
+            // Validate we got actual audio data
+            if (chunkBuffer.length < 44) {
+                console.warn(`[Story] Segment ${i + 1}: Buffer too small (${chunkBuffer.length} bytes), skipping`);
+                continue;
             }
 
             audioSegments.push(chunkBuffer);
+            console.log(`[Story] Segment ${i + 1}: Successfully added (${chunkBuffer.length} bytes)`);
 
-            // Add a small silence gap between segments for natural pacing
-            // This creates a brief pause between narrative segments
         } catch (e) {
-            console.error(`Story audio synthesis failed for segment: "${item.text.substring(0, 20)}..."`, e);
+            console.error(`[Story] Segment ${i + 1} synthesis failed:`, e);
+            // Don't rethrow - continue with other segments
         }
     }
 
-    if (audioSegments.length === 0) return Buffer.from([]);
+    if (audioSegments.length === 0) {
+        console.error('[Story] No audio segments were successfully synthesized!');
+        return Buffer.from([]);
+    }
+
+    console.log(`[Story] Concatenating ${audioSegments.length} segments...`);
 
     // Concatenate WAV buffers, stripping headers from all but first
     const finalBuffer = Buffer.concat([
         audioSegments[0],
         ...audioSegments.slice(1).map(b => b.subarray(44))
     ]);
+
+    console.log(`[Story] Final audio size: ${finalBuffer.length} bytes`);
 
     return finalBuffer;
 }
