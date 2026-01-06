@@ -13,20 +13,20 @@ Multi-tenant Agentic RAG Platform.
 ## 🌐 Website Preview
 
 ### Landing Page
-![Landing Page Preview](./images/website%20preview%20img%201.png)
+![Landing Page Preview](./images/website-preview-1.png)
 
 ### Document Upload & Processing
-![Document Processing](./images/website%20preview%20image%202.png)
+![Document Processing](./images/website-preview-2.png)
 
 ### RAG Query Interface
-![Query Interface](./images/Website%20preview%20image%203.png)
+![Query Interface](./images/website-preview-3.png)
 
 ---
 
 ## 🔌 API Testing (Postman)
 
 ### Request Handling
-![Postman Request Handling](./images/postman%20Request%20Handling.png)
+![Postman Request Handling](./images/postman-request-handling.png)
 
 ### API Demo
 ![Postman API Demo](./images/postman.gif)
