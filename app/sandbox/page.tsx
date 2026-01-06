@@ -8,8 +8,9 @@ import { UploadCloud, FileText, Trash2, MessageSquare, ChevronRight } from 'luci
 import { cn } from '@/lib/utils'
 import PodcastStudio from '@/components/PodcastStudio'
 import { Toast, ToastType } from '@/components/ui/Toast'
+import ClientOCRProcessor from '@/components/ClientOCRProcessor'
 
-type FileStatus = 'queued' | 'processing' | 'completed' | 'error' | 'requires_ocr'
+type FileStatus = 'queued' | 'processing' | 'completed' | 'error' | 'requires_ocr' | 'ocr_processing'
 
 interface FileItem {
   id: string
@@ -169,64 +170,49 @@ export default function Home() {
     await loadUserDocs()
   }
 
-  const handleRunOCR = async (fileItem: FileItem) => {
-    // Reset status to queued, but we need to trigger processing with ocrEnabled
-    // Custom processing for this item
-    setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'processing', message: 'Running OCR...' } : f))
+  const handleRunOCR = (fileItem: FileItem) => {
+    // Set status to ocr_processing - component will handle the rest
+    setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'ocr_processing' } : f))
+  }
 
+  const handleOCRComplete = async (fileItem: FileItem, text: string) => {
     try {
-      const formData = new FormData()
-      formData.append('file', fileItem.file)
-      formData.append('ocrEnabled', 'true') // Enable OCR
-
-      const response = await fetch('/api/process-file', {
+      // Send extracted text to server for storage
+      const response = await fetch('/api/save-ocr-result', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: fileItem.file.name,
+          text: text
+        })
       })
 
-      if (!response.ok) throw new Error('OCR Upload failed')
+      const result = await response.json()
 
-      const reader = response.body?.getReader()
-      if (reader) {
-        const decoder = new TextDecoder()
-        let done = false
-        let success = false
-        let buffer = ''
-
-        while (!done) {
-          const { value, done: readerDone } = await reader.read()
-          done = readerDone
-          if (value) {
-            const text = decoder.decode(value, { stream: true })
-            buffer += text
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || ''
-
-            for (const line of lines) {
-              if (line.trim().startsWith('data: ')) {
-                const data = JSON.parse(line.trim().slice(6))
-                if (data.status === 'complete') success = true
-                else if (data.status === 'error') {
-                  setToast({ message: data.message, type: 'error' })
-                  setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: data.message } : f))
-                }
-              }
-            }
-          }
-        }
-
-        if (success) {
-          setFiles(prev => prev.filter(f => f.id !== fileItem.id))
-          loadUserDocs()
-          setToast({ message: 'OCR completed successfully', type: 'success' })
-        }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to save OCR result')
       }
-    } catch (e) {
-      const err = e as Error
-      console.warn(err)
-      setToast({ message: err.message || 'OCR failed', type: 'error' })
-      setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: err.message || 'OCR failed' } : f))
+
+      // Success - remove from queue and refresh docs
+      setFiles(prev => prev.filter(f => f.id !== fileItem.id))
+      loadUserDocs()
+      setToast({ message: 'OCR completed successfully', type: 'success' })
+
+    } catch (err) {
+      const error = err as Error
+      console.warn('[OCR Save Error]', error)
+      setToast({ message: error.message || 'Failed to save OCR result', type: 'error' })
+      setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: error.message } : f))
     }
+  }
+
+  const handleOCRError = (fileItem: FileItem, error: string) => {
+    setToast({ message: error, type: 'error' })
+    setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'error', message: error } : f))
+  }
+
+  const handleOCRCancel = (fileItem: FileItem) => {
+    setFiles(prev => prev.map(f => f.id === fileItem.id ? { ...f, status: 'requires_ocr' } : f))
   }
 
   return (
@@ -284,23 +270,34 @@ export default function Home() {
                 </button>
               </div>
               {files.map(f => (
-                <div key={f.id} className="text-xs flex justify-between text-muted-foreground">
-                  <span className="truncate max-w-[150px]">{f.file.name}</span>
-                  <span className={
-                    f.status === 'completed' ? 'text-green-500' :
-                      f.status === 'error' ? 'text-destructive' :
-                        f.status === 'requires_ocr' ? 'text-amber-500' :
-                          'text-primary'
-                  }>
-                    {f.status === 'requires_ocr' ? (
-                      <button
-                        onClick={() => handleRunOCR(f)}
-                        className="text-[10px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded border border-amber-500/30 transition-colors font-bold"
-                      >
-                        Run OCR
-                      </button>
-                    ) : f.status}
-                  </span>
+                <div key={f.id} className="space-y-1">
+                  {f.status === 'ocr_processing' ? (
+                    <ClientOCRProcessor
+                      file={f.file}
+                      onComplete={(text) => handleOCRComplete(f, text)}
+                      onError={(error) => handleOCRError(f, error)}
+                      onCancel={() => handleOCRCancel(f)}
+                    />
+                  ) : (
+                    <div className="text-xs flex justify-between text-muted-foreground">
+                      <span className="truncate max-w-[150px]">{f.file.name}</span>
+                      <span className={
+                        f.status === 'completed' ? 'text-green-500' :
+                          f.status === 'error' ? 'text-destructive' :
+                            f.status === 'requires_ocr' ? 'text-amber-500' :
+                              'text-primary'
+                      }>
+                        {f.status === 'requires_ocr' ? (
+                          <button
+                            onClick={() => handleRunOCR(f)}
+                            className="text-[10px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 px-2 py-0.5 rounded border border-amber-500/30 transition-colors font-bold"
+                          >
+                            Run OCR
+                          </button>
+                        ) : f.status}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
