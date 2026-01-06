@@ -18,25 +18,6 @@
 
 ---
 
-## 📸 Website Preview
-
-<div align="center">
-
-### 🏠 Landing Page
-<!-- Add your landing page screenshot here -->
-![Landing Page Preview](./images/website-preview-1.png)
-
-### 📄 Document Upload & Processing
-<!-- Add your document processing screenshot here -->
-![Document Processing](./images/website-preview-2.png)
-
-### 💬 RAG Query Interface
-<!-- Add your query interface screenshot here -->
-![Query Interface](./images/website-preview-3.png)
-
-</div>
-
----
 
 ## ✨ Features
 
@@ -140,21 +121,6 @@ flowchart TB
 
 ---
 
-## 🔌 API Testing (Postman)
-
-<div align="center">
-
-### Request Handling
-![Postman Request Handling](./images/postman-request-handling.png)
-
-### API Demo
-![Postman API Demo](./images/postman.gif)
-
-> **Note**: The GIF above demonstrates the complete API workflow including file upload, processing, and querying through Postman.
-
-</div>
-
----
 
 ## 🛠️ Tech Stack
 
