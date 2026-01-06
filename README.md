@@ -18,6 +18,23 @@
 
 ---
 
+## 📸 Website Preview
+
+<div align="center">
+
+### 🏠 Landing Page
+![Landing Page Preview](./public/1%20(2).png)
+
+### 📄 Document Upload & Processing
+![Document Processing](./public/2%20(2).png)
+
+### 💬 RAG Query Interface
+![Query Interface](./public/3.png)
+
+</div>
+
+---
+
 
 ## ✨ Features
 
