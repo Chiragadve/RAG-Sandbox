@@ -12,7 +12,7 @@
 
 **Transform your documents into intelligent, queryable knowledge bases with AI-powered podcasts and story generation.**
 
-[🚀 Live Demo](#) • [📖 Documentation](#api-reference) • [🐛 Report Bug](https://github.com/yourusername/rag-sandbox/issues)
+[🚀 Live Demo](https://ragsandbox.vercel.app/) • [📖 Documentation](https://ragsandbox.vercel.app/docs) • [🐛 Report Bug](https://github.com/yourusername/rag-sandbox/issues)
 
 </div>
 
