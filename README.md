@@ -194,11 +194,6 @@ GROQ_API_KEY=your_groq_api_key
 # Cartesia API (for TTS)
 CARTESIA_API_KEY=your_cartesia_api_key
 
-# Gmail OAuth (for email integration)
-GMAIL_CLIENT_ID=your_gmail_client_id
-GMAIL_CLIENT_SECRET=your_gmail_client_secret
-GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
-
 # App URL
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
